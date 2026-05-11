@@ -1,0 +1,823 @@
+cat > ~/iaq/templates/dashboard.html << 'DASHBOARD_EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IAQ Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  :root {
+    --bg: #F5F1E8;
+    --card-bg: #FFFFFF;
+    --border: #E8E2D5;
+    --text-primary: #2C2620;
+    --text-secondary: #7A7068;
+    --text-tertiary: #A89F92;
+    --accent: #8B7355;
+    --status-good: #7A9B6E;
+    --status-warning: #C9874A;
+    --status-alert: #B85C4F;
+    --status-good-bg: #E9EFE5;
+    --status-warning-bg: #F5E6D3;
+    --status-alert-bg: #F2DDD9;
+    --shadow: 0 2px 8px rgba(60, 50, 40, 0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text-primary); line-height: 1.5;
+    min-height: 100vh; padding: 2rem 1.5rem 4rem;
+  }
+  .container { max-width: 1280px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 2rem; }
+  h1 { font-size: 2.25rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 0.4rem; }
+  .subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 1.25rem; }
+  .overall-status {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1.25rem; border-radius: 999px;
+    font-weight: 500; font-size: 0.95rem;
+  }
+  .overall-status.good { background: var(--status-good-bg); color: var(--status-good); }
+  .overall-status.warning { background: var(--status-warning-bg); color: var(--status-warning); }
+  .overall-status.alert { background: var(--status-alert-bg); color: var(--status-alert); }
+  .status-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: currentColor; }
+
+  .section-title {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-tertiary); margin-bottom: 1rem; font-weight: 600;
+  }
+
+  /* === Outdoor strip === */
+  .outdoor-strip {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;
+    box-shadow: var(--shadow);
+  }
+  .outdoor-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  }
+  .outdoor-side { flex: 1; min-width: 0; }
+  .outdoor-divider { width: 1px; align-self: stretch; background: var(--border); }
+  .outdoor-eyebrow {
+    font-size: 0.7rem; color: var(--text-tertiary);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    font-weight: 600; margin-bottom: 0.4rem;
+  }
+  .outdoor-headline {
+    display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap;
+  }
+  .outdoor-headline .big { font-size: 1.4rem; font-weight: 500; color: var(--text-primary); }
+  .outdoor-headline .meta { font-size: 0.85rem; color: var(--text-secondary); }
+  .outdoor-detail {
+    font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem;
+  }
+  .outdoor-detail strong { color: var(--text-primary); font-weight: 600; }
+  .outdoor-detail .aqi-good { color: var(--status-good); font-weight: 600; }
+  .outdoor-detail .aqi-moderate { color: var(--status-warning); font-weight: 600; }
+  .outdoor-detail .aqi-bad { color: var(--status-alert); font-weight: 600; }
+  .outdoor-verdict {
+    margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem;
+  }
+  .verdict-pill {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.2rem 0.55rem; border-radius: 999px;
+    font-weight: 600; font-size: 0.72rem;
+  }
+  .verdict-pill .vp-dot { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: currentColor; }
+  .verdict-pill.good { background: var(--status-good-bg); color: var(--status-good); }
+  .verdict-pill.warning { background: var(--status-warning-bg); color: var(--status-warning); }
+  .verdict-pill.alert { background: var(--status-alert-bg); color: var(--status-alert); }
+  .verdict-pill.neutral { background: var(--bg); color: var(--text-secondary); }
+  .outdoor-verdict-text { color: var(--text-secondary); }
+  .outdoor-verdict-text strong { color: var(--text-primary); font-weight: 600; }
+
+  /* === Hero snapshot card === */
+  .snapshot {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
+    box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 1.5rem;
+  }
+  .snapshot-ring { position: relative; width: 110px; height: 110px; flex-shrink: 0; }
+  .snapshot-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+  .snapshot-ring .ring-bg { fill: none; stroke: var(--border); stroke-width: 6; }
+  .snapshot-ring .ring-fg {
+    fill: none; stroke-width: 6; stroke-linecap: round;
+    stroke-dasharray: 301.6;
+    transition: stroke-dashoffset 0.6s ease, stroke 0.3s ease;
+  }
+  .snapshot-ring .ring-fg.good { stroke: var(--status-good); }
+  .snapshot-ring .ring-fg.warning { stroke: var(--status-warning); }
+  .snapshot-ring .ring-fg.alert { stroke: var(--status-alert); }
+  .snapshot-ring .center {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .snapshot-ring .score-num {
+    font-size: 2rem; font-weight: 300; color: var(--text-primary); line-height: 1;
+  }
+  .snapshot-ring .score-frac {
+    font-size: 0.65rem; color: var(--text-tertiary);
+    text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.15rem;
+  }
+  .snapshot-body { flex: 1; }
+  .snapshot-eyebrow {
+    font-size: 0.7rem; color: var(--text-tertiary);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    font-weight: 600; margin-bottom: 0.35rem;
+  }
+  .snapshot-verdict {
+    font-size: 1.05rem; color: var(--text-primary);
+    line-height: 1.45; margin-bottom: 0.5rem;
+  }
+  .snapshot-verdict .accent-good { color: var(--status-good); font-weight: 600; }
+  .snapshot-verdict .accent-warning { color: var(--status-warning); font-weight: 600; }
+  .snapshot-verdict .accent-alert { color: var(--status-alert); font-weight: 600; }
+  .snapshot-meta { font-size: 0.75rem; color: var(--text-tertiary); }
+
+  /* === Existing components === */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem; margin-bottom: 2.5rem;
+  }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.25rem;
+    box-shadow: var(--shadow); transition: border-color 0.2s ease;
+  }
+  .card.alert { border-color: var(--status-alert); }
+  .card.warning { border-color: var(--status-warning); }
+  .card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 0.75rem;
+  }
+  .card-label { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; }
+  .card-status-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+  .card-status-dot.good { background: var(--status-good); }
+  .card-status-dot.warning { background: var(--status-warning); }
+  .card-status-dot.alert { background: var(--status-alert); }
+  .card-status-dot.unknown { background: var(--text-tertiary); }
+  .card-value {
+    font-size: 2.25rem; font-weight: 300; color: var(--text-primary);
+    line-height: 1.1; margin-bottom: 0.25rem;
+  }
+  .card-value .unit {
+    font-size: 0.95rem; color: var(--text-secondary);
+    font-weight: 400; margin-left: 0.25rem;
+  }
+  .card-threshold {
+    margin-top: 0.85rem; padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.82rem; color: var(--text-secondary);
+  }
+  .threshold-edit-btn {
+    background: none; border: none; color: var(--accent); cursor: pointer;
+    font-size: 0.82rem; font-weight: 500; padding: 0.15rem 0.5rem;
+    border-radius: 4px; transition: background 0.15s ease;
+  }
+  .threshold-edit-btn:hover { background: var(--bg); }
+  .threshold-input-group { display: none; gap: 0.4rem; align-items: center; }
+  .threshold-input-group.active { display: flex; }
+  .threshold-input-group input {
+    width: 70px; padding: 0.3rem 0.5rem; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 0.85rem; font-family: inherit;
+    color: var(--text-primary); background: var(--bg);
+  }
+  .threshold-input-group button {
+    padding: 0.3rem 0.65rem; border: none; border-radius: 6px;
+    font-size: 0.78rem; font-weight: 500; cursor: pointer; font-family: inherit;
+  }
+  .threshold-input-group .save-btn { background: var(--status-good); color: white; }
+  .threshold-input-group .cancel-btn { background: var(--bg); color: var(--text-secondary); }
+
+  .card-standards {
+    margin-top: 0.75rem; padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+  .standards-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 0.4rem; font-size: 0.78rem;
+  }
+  .standards-label { color: var(--text-secondary); font-weight: 500; }
+  .standards-label .recommended-val {
+    color: var(--text-primary); font-weight: 600;
+  }
+  .standards-source { color: var(--text-tertiary); font-size: 0.7rem; }
+  .standards-band-wrapper { position: relative; height: 0.6rem; margin: 0.55rem 0 0.3rem; }
+  .standards-band {
+    position: absolute; inset: 0; height: 0.4rem; top: 0.1rem;
+    border-radius: 4px;
+    background: linear-gradient(
+      to right,
+      var(--status-good) 0%,
+      var(--status-good) 47%,
+      var(--status-warning) 47%,
+      var(--status-warning) 67%,
+      var(--status-alert) 67%,
+      var(--status-alert) 100%
+    );
+    opacity: 0.85;
+  }
+  .standards-band-wrapper::after {
+    content: ''; position: absolute;
+    left: 67%; top: 0; bottom: 0;
+    width: 1px; background: var(--text-primary); opacity: 0.35;
+  }
+  .standards-marker {
+    position: absolute; top: -2px;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid var(--text-primary);
+    transform: translateX(-50%);
+    transition: left 0.4s ease, border-top-color 0.2s ease;
+  }
+  .standards-marker.over-limit { border-top-color: var(--status-alert); }
+  .standards-current {
+    font-size: 0.72rem; color: var(--text-tertiary); margin-top: 0.15rem;
+  }
+  .standards-current .over-badge {
+    display: inline-block; margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem; border-radius: 999px;
+    background: var(--status-alert-bg); color: var(--status-alert);
+    font-weight: 600; font-size: 0.66rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .standards-na {
+    font-size: 0.72rem; color: var(--text-tertiary);
+    font-style: italic; padding: 0.4rem 0;
+  }
+
+  .charts-section { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 800px) { .charts-section { grid-template-columns: 1fr; } }
+  .chart-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.25rem; box-shadow: var(--shadow);
+  }
+  .chart-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.85rem; color: var(--text-primary); }
+  .chart-container { position: relative; height: 260px; }
+  footer {
+    text-align: center; margin-top: 2.5rem;
+    color: var(--text-tertiary); font-size: 0.82rem;
+  }
+  .connection-indicator {
+    display: inline-flex; align-items: center; gap: 0.4rem; margin-left: 0.75rem;
+  }
+  .connection-indicator .dot {
+    width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--status-good);
+  }
+  .connection-indicator.offline .dot { background: var(--status-alert); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>IAQ Monitor</h1>
+    <p class="subtitle">Indoor Air Quality Dashboard</p>
+    <div id="overallStatus" class="overall-status good">
+      <span class="status-dot"></span>
+      <span id="overallStatusText">Air Quality: Loading...</span>
+    </div>
+  </header>
+
+  <!-- Outdoor vs Indoor strip -->
+  <div id="outdoorStrip" class="outdoor-strip hidden">
+    <div class="outdoor-row">
+      <div class="outdoor-side">
+        <div class="outdoor-eyebrow" id="outdoorLocation">Outdoor</div>
+        <div class="outdoor-headline">
+          <span class="big" id="outdoorTemp">—</span>
+          <span class="meta" id="outdoorWeather">—</span>
+        </div>
+        <div class="outdoor-detail" id="outdoorDetail">—</div>
+      </div>
+      <div class="outdoor-divider"></div>
+      <div class="outdoor-side">
+        <div class="outdoor-eyebrow">Indoor · This Room</div>
+        <div class="outdoor-headline">
+          <span class="big" id="indoorTemp">—</span>
+          <span class="meta" id="indoorMeta">—</span>
+        </div>
+        <div class="outdoor-detail" id="indoorDetail">—</div>
+      </div>
+    </div>
+    <div class="outdoor-verdict">
+      <span class="verdict-pill" id="verdictPill">
+        <span class="vp-dot"></span><span id="verdictPillText">—</span>
+      </span>
+      <span class="outdoor-verdict-text" id="verdictText">—</span>
+    </div>
+  </div>
+
+  <!-- Hero snapshot card -->
+  <div class="snapshot">
+    <div class="snapshot-ring">
+      <svg viewBox="0 0 110 110">
+        <circle class="ring-bg" cx="55" cy="55" r="48"/>
+        <circle class="ring-fg good" id="scoreRing" cx="55" cy="55" r="48" stroke-dashoffset="301.6"/>
+      </svg>
+      <div class="center">
+        <span class="score-num" id="scoreNum">—</span>
+        <span class="score-frac">/ 100</span>
+      </div>
+    </div>
+    <div class="snapshot-body">
+      <div class="snapshot-eyebrow">Air Quality Snapshot</div>
+      <div class="snapshot-verdict" id="snapshotVerdict">Loading air quality data...</div>
+      <div class="snapshot-meta" id="snapshotMeta">—</div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Current Readings</h2>
+  <div id="cardsGrid" class="cards-grid"></div>
+
+  <h2 class="section-title">Last Hour</h2>
+  <div class="charts-section">
+    <div class="chart-card">
+      <div class="chart-title">Environmental Conditions</div>
+      <div class="chart-container"><canvas id="envChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Air Pollutants</div>
+      <div class="chart-container"><canvas id="pollChart"></canvas></div>
+    </div>
+  </div>
+
+  <footer>
+    <span id="lastUpdated">Waiting for data...</span>
+    <span id="connectionStatus" class="connection-indicator">
+      <span class="dot"></span> Connected
+    </span>
+  </footer>
+
+</div>
+
+<script>
+const METRICS = [
+  { key: 'temp_c',      label: 'Temperature',        unit: '\u00B0F',         decimals: 1 },
+  { key: 'humidity',    label: 'Humidity',           unit: '%',               decimals: 0 },
+  { key: 'co_ppm',      label: 'Carbon Monoxide',    unit: 'ppm',             decimals: 1 },
+  { key: 'co2_ppm',     label: 'Carbon Dioxide',     unit: 'ppm',             decimals: 0 },
+  { key: 'nh3_ppm',     label: 'Ammonia',            unit: 'ppm',             decimals: 1 },
+  { key: 'voc_ppm',     label: 'VOCs',               unit: 'ppm',             decimals: 2 },
+  { key: 'benzene_ppm', label: 'Benzene',            unit: 'ppm',             decimals: 2 },
+  { key: 'smoke_ppm',   label: 'Smoke',              unit: 'ppm',             decimals: 1 },
+  { key: 'pm1_0',       label: 'PM1.0',              unit: '\u00B5g/m\u00B3', decimals: 0 },
+  { key: 'pm2_5',       label: 'PM2.5',              unit: '\u00B5g/m\u00B3', decimals: 0 },
+  { key: 'pm10',        label: 'PM10',               unit: '\u00B5g/m\u00B3', decimals: 0 }
+];
+
+const STANDARDS = {
+  temp_c:      { limit: 25.5, source: 'ASHRAE 55',         decimals: 1, displayInF: true },
+  humidity:    { limit: 60,   source: 'ASHRAE 55 / EPA',   decimals: 0 },
+  co_ppm:      { limit: 9,    source: 'WHO 1-hour',         decimals: 1 },
+  co2_ppm:     { limit: 1000, source: 'ASHRAE 62.1',        decimals: 0 },
+  nh3_ppm:     { limit: 25,   source: 'OSHA 8-hr PEL',      decimals: 1 },
+  voc_ppm:     { limit: 0.5,  source: 'LEED IAQ',           decimals: 2 },
+  benzene_ppm: { limit: 1,    source: 'OSHA 8-hr PEL',      decimals: 2 },
+  smoke_ppm:   null,
+  pm1_0:       { limit: 12,   source: 'PM2.5-aligned',      decimals: 0 },
+  pm2_5:       { limit: 35,   source: 'EPA NAAQS 24-hr',    decimals: 0 },
+  pm10:        { limit: 150,  source: 'EPA NAAQS 24-hr',    decimals: 0 }
+};
+
+// Metrics included in the score (excludes MQ-135 cross-sensitive derivatives)
+const SCORE_METRICS = ['co_ppm', 'co2_ppm', 'voc_ppm', 'pm1_0', 'pm2_5', 'pm10', 'humidity', 'temp_c'];
+const METRIC_LABELS = {
+  co_ppm: 'CO', co2_ppm: 'CO\u2082', voc_ppm: 'VOCs',
+  pm2_5: 'PM2.5', pm10: 'PM10', pm1_0: 'PM1.0',
+  humidity: 'humidity', temp_c: 'temperature',
+  nh3_ppm: 'ammonia', benzene_ppm: 'benzene', smoke_ppm: 'smoke'
+};
+
+let currentThresholds = {};
+let envChart = null;
+let pollChart = null;
+
+function cToF(c) { return (c === null || c === undefined) ? c : (c * 9/5) + 32; }
+function fToC(f) { return (f === null || f === undefined) ? f : (f - 32) * 5/9; }
+
+function getStatus(value, threshold) {
+  if (value === null || value === undefined || threshold === undefined) return 'unknown';
+  if (value >= threshold) return 'alert';
+  if (value >= 0.7 * threshold) return 'warning';
+  return 'good';
+}
+
+// === Air quality score ===
+function computeAirScore(latest, thresholds) {
+  if (!latest || !thresholds) return null;
+  let totalPenalty = 0;
+  for (const m of SCORE_METRICS) {
+    const v = latest[m]; const t = thresholds[m];
+    if (v === null || v === undefined || !t || t <= 0) continue;
+    const ratio = v / t;
+    if (ratio >= 1.0) {
+      totalPenalty += Math.min(25, 15 + (ratio - 1) * 30);
+    } else if (ratio >= 0.7) {
+      totalPenalty += 10 * ((ratio - 0.7) / 0.3);
+    }
+  }
+  return Math.max(0, Math.min(100, Math.round(100 - totalPenalty)));
+}
+
+function scoreCategory(score) {
+  if (score === null) return 'unknown';
+  if (score >= 80) return 'good';
+  if (score >= 60) return 'warning';
+  return 'alert';
+}
+
+function generateVerdict(latest, thresholds) {
+  if (!latest || !thresholds) return 'Loading air quality data...';
+  const alerts = [];
+  const cautions = [];
+  for (const m of SCORE_METRICS) {
+    const v = latest[m]; const t = thresholds[m];
+    if (v === null || v === undefined || !t) continue;
+    if (v >= t) alerts.push(m);
+    else if (v >= 0.7 * t) cautions.push(m);
+  }
+  if (alerts.length === 0 && cautions.length === 0) {
+    return 'The air in this room is <span class="accent-good">healthy</span>. CO\u2082 is well below recommended limits, and particulates are at trace levels.';
+  }
+  if (alerts.length === 0) {
+    const items = cautions.slice(0, 2).map(m => METRIC_LABELS[m]).join(' and ');
+    return `Air quality is <span class="accent-warning">acceptable</span> with ${items} approaching the configured threshold.`;
+  }
+  const items = alerts.slice(0, 2).map(m => METRIC_LABELS[m]).join(' and ');
+  const verb = alerts.length === 1 ? 'is' : 'are';
+  return `Air quality <span class="accent-alert">needs attention</span>. ${items} ${verb} above the configured threshold.`;
+}
+
+function updateSnapshot(latest, thresholds, history) {
+  const score = computeAirScore(latest, thresholds);
+  const cat = scoreCategory(score);
+  const ring = document.getElementById('scoreRing');
+  const numEl = document.getElementById('scoreNum');
+  const verdictEl = document.getElementById('snapshotVerdict');
+  const metaEl = document.getElementById('snapshotMeta');
+
+  if (score !== null) {
+    numEl.textContent = score;
+    const offset = 301.6 * (1 - score / 100);
+    ring.setAttribute('stroke-dashoffset', offset.toFixed(1));
+    ring.className.baseVal = `ring-fg ${cat}`;
+  } else {
+    numEl.textContent = '—';
+    ring.setAttribute('stroke-dashoffset', '301.6');
+  }
+
+  verdictEl.innerHTML = generateVerdict(latest, thresholds);
+
+  // Compute meta line
+  let metaParts = [];
+  if (latest && latest.timestamp) {
+    const ts = new Date(latest.timestamp.replace(' ', 'T'));
+    const secsAgo = Math.max(0, Math.round((Date.now() - ts.getTime()) / 1000));
+    if (secsAgo < 60) metaParts.push(`Updated ${secsAgo} seconds ago`);
+    else metaParts.push(`Updated ${Math.round(secsAgo / 60)} min ago`);
+  }
+  if (history && history.length) {
+    metaParts.push(`${history.length} readings logged this hour`);
+  }
+  metaEl.textContent = metaParts.join(' · ') || '—';
+}
+
+// === Outdoor strip ===
+function aqiClass(label) {
+  if (!label) return '';
+  if (label === 'Good') return 'aqi-good';
+  if (label === 'Moderate') return 'aqi-moderate';
+  return 'aqi-bad';
+}
+
+function generateComparison(indoor, outdoor) {
+  if (!indoor || !outdoor) return null;
+  const inPm = indoor.pm2_5;
+  const outPm = outdoor.pm2_5;
+  if (inPm === null || inPm === undefined || outPm === null || outPm === undefined) return null;
+
+  // Use a small epsilon to avoid divide-by-zero with very clean indoor air
+  const safeIn = Math.max(0.5, inPm);
+  const safeOut = Math.max(0.5, outPm);
+
+  if (inPm < 1 && outPm < 5) {
+    return { pill: 'good', label: 'Both clean', text: 'Indoor and outdoor PM2.5 are both at trace levels right now.' };
+  }
+  const ratio = safeOut / safeIn;
+  if (ratio > 1.5) {
+    return {
+      pill: 'good', label: 'Cleaner',
+      text: `Indoor air is <strong>${ratio.toFixed(1)}\u00D7 lower</strong> in PM2.5 than outdoor right now`
+    };
+  }
+  if (ratio < 0.67) {
+    return {
+      pill: 'alert', label: 'Higher',
+      text: `Outdoor air is <strong>${(1/ratio).toFixed(1)}\u00D7 lower</strong> in PM2.5 than indoor right now`
+    };
+  }
+  return {
+    pill: 'neutral', label: 'Comparable',
+    text: 'Indoor and outdoor PM2.5 are comparable right now'
+  };
+}
+
+function updateOutdoorStrip(outdoor, latest) {
+  const strip = document.getElementById('outdoorStrip');
+  if (!outdoor || !outdoor.location) {
+    strip.classList.add('hidden');
+    return;
+  }
+  strip.classList.remove('hidden');
+
+  // Outdoor side
+  document.getElementById('outdoorLocation').textContent = `Outdoor · ${outdoor.location}`;
+  document.getElementById('outdoorTemp').textContent =
+    outdoor.temp_f !== null && outdoor.temp_f !== undefined ? `${Math.round(outdoor.temp_f)}\u00B0F` : '—';
+  const wxParts = [];
+  if (outdoor.weather_label) wxParts.push(outdoor.weather_label);
+  if (outdoor.humidity !== null && outdoor.humidity !== undefined) wxParts.push(`${Math.round(outdoor.humidity)}% RH`);
+  document.getElementById('outdoorWeather').textContent = wxParts.join(' \u00B7 ');
+
+  const pm = outdoor.pm2_5 !== null && outdoor.pm2_5 !== undefined ? Math.round(outdoor.pm2_5) : '—';
+  const aqi = outdoor.us_aqi !== null && outdoor.us_aqi !== undefined ? Math.round(outdoor.us_aqi) : '—';
+  const aqiCls = aqiClass(outdoor.aqi_label);
+  document.getElementById('outdoorDetail').innerHTML =
+    `PM2.5 <strong>${pm}</strong> \u00B5g/m\u00B3 \u00B7 AQI <span class="${aqiCls}">${aqi} ${outdoor.aqi_label || ''}</span>`;
+
+  // Indoor side
+  if (latest) {
+    const iTemp = latest.temp_c !== null && latest.temp_c !== undefined
+      ? `${cToF(latest.temp_c).toFixed(0)}\u00B0F` : '—';
+    document.getElementById('indoorTemp').textContent = iTemp;
+    const indoorMetaBits = [];
+    if (latest.humidity !== null && latest.humidity !== undefined) indoorMetaBits.push(`${Math.round(latest.humidity)}% RH`);
+    if (latest.co2_ppm !== null && latest.co2_ppm !== undefined) indoorMetaBits.push(`${Math.round(latest.co2_ppm)} ppm CO\u2082`);
+    document.getElementById('indoorMeta').textContent = indoorMetaBits.join(' \u00B7 ');
+
+    const iPm = latest.pm2_5 !== null && latest.pm2_5 !== undefined ? Math.round(latest.pm2_5) : '—';
+    const score = computeAirScore(latest, currentThresholds);
+    const scoreCat = scoreCategory(score);
+    const scoreCls = scoreCat === 'good' ? 'aqi-good' : (scoreCat === 'warning' ? 'aqi-moderate' : 'aqi-bad');
+    const scoreLabel = scoreCat === 'good' ? 'Good' : (scoreCat === 'warning' ? 'Caution' : 'Alert');
+    document.getElementById('indoorDetail').innerHTML =
+      `PM2.5 <strong>${iPm}</strong> \u00B5g/m\u00B3 \u00B7 Score <span class="${scoreCls}">${score !== null ? score : '—'} ${scoreLabel}</span>`;
+  }
+
+  // Verdict
+  const cmp = generateComparison(latest, outdoor);
+  if (cmp) {
+    const pill = document.getElementById('verdictPill');
+    pill.className = `verdict-pill ${cmp.pill}`;
+    document.getElementById('verdictPillText').textContent = cmp.label;
+    document.getElementById('verdictText').innerHTML = cmp.text;
+  }
+}
+
+// === Existing card logic (mostly unchanged) ===
+function buildCards() {
+  const grid = document.getElementById('cardsGrid');
+  grid.innerHTML = '';
+  METRICS.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = `card-${m.key}`;
+    const std = STANDARDS[m.key];
+    let standardsHtml = '';
+    if (std) {
+      const stdUnit = std.displayInF ? '\u00B0F' : m.unit;
+      standardsHtml = `
+        <div class="card-standards">
+          <div class="standards-header">
+            <span class="standards-label">
+              Recommended:
+              <span class="recommended-val" id="std-val-${m.key}">—</span>
+              ${stdUnit}
+            </span>
+            <span class="standards-source">${std.source}</span>
+          </div>
+          <div class="standards-band-wrapper">
+            <div class="standards-band"></div>
+            <div class="standards-marker" id="std-marker-${m.key}" style="left: 0%"></div>
+          </div>
+          <div class="standards-current" id="std-current-${m.key}"></div>
+        </div>`;
+    } else {
+      standardsHtml = `<div class="card-standards"><div class="standards-na">No formal indoor standard available</div></div>`;
+    }
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-label">${m.label}</span>
+        <span class="card-status-dot unknown" id="dot-${m.key}"></span>
+      </div>
+      <div class="card-value">
+        <span id="val-${m.key}">—</span><span class="unit">${m.unit}</span>
+      </div>
+      <div class="card-threshold">
+        <span id="thresh-display-${m.key}">
+          Alert > <span id="thresh-val-${m.key}">—</span> ${m.unit}
+        </span>
+        <button class="threshold-edit-btn" onclick="startEdit('${m.key}')">Edit</button>
+        <span class="threshold-input-group" id="thresh-edit-${m.key}">
+          <input type="number" step="0.1" id="thresh-input-${m.key}">
+          <button class="save-btn" onclick="saveThreshold('${m.key}')">Save</button>
+          <button class="cancel-btn" onclick="cancelEdit('${m.key}')">Cancel</button>
+        </span>
+      </div>
+      ${standardsHtml}`;
+    grid.appendChild(card);
+  });
+}
+
+function startEdit(key) {
+  document.getElementById(`thresh-display-${key}`).style.display = 'none';
+  document.querySelector(`#card-${key} .threshold-edit-btn`).style.display = 'none';
+  document.getElementById(`thresh-edit-${key}`).classList.add('active');
+  const input = document.getElementById(`thresh-input-${key}`);
+  let editValue = currentThresholds[key];
+  if (key === 'temp_c' && editValue !== undefined) editValue = cToF(editValue).toFixed(1);
+  input.value = editValue !== undefined ? editValue : '';
+  input.focus(); input.select();
+}
+function cancelEdit(key) {
+  document.getElementById(`thresh-display-${key}`).style.display = '';
+  document.querySelector(`#card-${key} .threshold-edit-btn`).style.display = '';
+  document.getElementById(`thresh-edit-${key}`).classList.remove('active');
+}
+async function saveThreshold(key) {
+  let newVal = parseFloat(document.getElementById(`thresh-input-${key}`).value);
+  if (isNaN(newVal)) { cancelEdit(key); return; }
+  if (key === 'temp_c') newVal = fToC(newVal);
+  try {
+    const resp = await fetch('/api/thresholds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: newVal })
+    });
+    const data = await resp.json();
+    currentThresholds = data;
+    cancelEdit(key);
+    updateCards();
+  } catch (e) { console.error(e); }
+}
+
+function updateStandardsBand(metricKey, rawValue, decimals, displayUnit) {
+  const std = STANDARDS[metricKey];
+  if (!std) return;
+  const maxRange = std.limit * 1.5;
+  let pct = 0; let overLimit = false;
+  if (rawValue !== null && rawValue !== undefined) {
+    pct = (rawValue / maxRange) * 100;
+    overLimit = rawValue > std.limit;
+    pct = Math.max(0, Math.min(100, pct));
+  }
+  const marker = document.getElementById(`std-marker-${metricKey}`);
+  if (marker) {
+    marker.style.left = pct + '%';
+    if (overLimit) marker.classList.add('over-limit');
+    else marker.classList.remove('over-limit');
+  }
+  let displayLimit = std.limit;
+  let displayValue = rawValue;
+  if (std.displayInF) {
+    displayLimit = cToF(std.limit);
+    if (displayValue !== null && displayValue !== undefined) displayValue = cToF(displayValue);
+  }
+  const valEl = document.getElementById(`std-val-${metricKey}`);
+  if (valEl) valEl.textContent = Number(displayLimit).toFixed(std.decimals);
+  const currentEl = document.getElementById(`std-current-${metricKey}`);
+  if (currentEl) {
+    if (displayValue === null || displayValue === undefined) {
+      currentEl.textContent = 'Current: —';
+    } else {
+      const overBadge = overLimit ? '<span class="over-badge">over limit</span>' : '';
+      currentEl.innerHTML = `Current: ${Number(displayValue).toFixed(decimals)} ${displayUnit}${overBadge}`;
+    }
+  }
+}
+
+function updateCards(latest = null) {
+  if (!latest) latest = window._latestData || {};
+  let worstStatus = 'good';
+  METRICS.forEach(m => {
+    let value = latest[m.key];
+    let threshold = currentThresholds[m.key];
+    const status = getStatus(value, threshold);
+    let displayValue = value;
+    let displayThreshold = threshold;
+    if (m.key === 'temp_c') {
+      displayValue = cToF(value);
+      if (threshold !== undefined) displayThreshold = cToF(threshold).toFixed(1);
+    }
+    document.getElementById(`val-${m.key}`).textContent =
+      (displayValue === null || displayValue === undefined) ? '—' : Number(displayValue).toFixed(m.decimals);
+    document.getElementById(`thresh-val-${m.key}`).textContent =
+      displayThreshold !== undefined ? displayThreshold : '—';
+    const dot = document.getElementById(`dot-${m.key}`);
+    dot.className = `card-status-dot ${status}`;
+    const card = document.getElementById(`card-${m.key}`);
+    card.className = `card ${status === 'alert' ? 'alert' : (status === 'warning' ? 'warning' : '')}`;
+    updateStandardsBand(m.key, value, m.decimals, m.unit);
+    if (status === 'alert') worstStatus = 'alert';
+    else if (status === 'warning' && worstStatus !== 'alert') worstStatus = 'warning';
+  });
+  const overall = document.getElementById('overallStatus');
+  const text = document.getElementById('overallStatusText');
+  overall.className = `overall-status ${worstStatus}`;
+  text.textContent = `Air Quality: ${worstStatus === 'good' ? 'Good' : worstStatus === 'warning' ? 'Caution' : 'Alert'}`;
+}
+
+function buildCharts() {
+  const baseOpts = {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { maxRotation: 0, font: { size: 10 }, color: '#7A7068' }, grid: { color: '#E8E2D5' } },
+      y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#7A7068' }, grid: { color: '#E8E2D5' } }
+    },
+    elements: { point: { radius: 0 }, line: { tension: 0.3, borderWidth: 2 } }
+  };
+  envChart = new Chart(document.getElementById('envChart'), {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Temperature (\u00B0F)', data: [], borderColor: '#C9874A', backgroundColor: 'rgba(201,135,74,0.1)', yAxisID: 'y' },
+      { label: 'Humidity (%)', data: [], borderColor: '#7A9B6E', backgroundColor: 'rgba(122,155,110,0.1)', yAxisID: 'y' }
+    ]},
+    options: baseOpts
+  });
+  pollChart = new Chart(document.getElementById('pollChart'), {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'PM2.5 (\u00B5g/m\u00B3)', data: [], borderColor: '#B85C4F', backgroundColor: 'rgba(184,92,79,0.1)' },
+      { label: 'CO (ppm)', data: [], borderColor: '#8B7355', backgroundColor: 'rgba(139,115,85,0.1)' },
+      { label: 'CO2/100 (ppm)', data: [], borderColor: '#6B8FA0', backgroundColor: 'rgba(107,143,160,0.1)' }
+    ]},
+    options: baseOpts
+  });
+}
+
+function updateCharts(history) {
+  if (!envChart || !pollChart) return;
+  const labels = history.map(h => h.timestamp ? h.timestamp.slice(11, 16) : '');
+  envChart.data.labels = labels;
+  envChart.data.datasets[0].data = history.map(h =>
+    h.temp_c !== null && h.temp_c !== undefined ? cToF(h.temp_c) : null);
+  envChart.data.datasets[1].data = history.map(h => h.humidity);
+  envChart.update('none');
+  pollChart.data.labels = labels;
+  pollChart.data.datasets[0].data = history.map(h => h.pm2_5);
+  pollChart.data.datasets[1].data = history.map(h => h.co_ppm);
+  pollChart.data.datasets[2].data = history.map(h => h.co2_ppm ? h.co2_ppm / 100 : 0);
+  pollChart.update('none');
+}
+
+async function refresh() {
+  try {
+    const [latestRes, historyRes, threshRes, outdoorRes] = await Promise.all([
+      fetch('/api/latest'),
+      fetch('/api/history'),
+      fetch('/api/thresholds'),
+      fetch('/api/outdoor')
+    ]);
+    const latest = await latestRes.json();
+    const history = await historyRes.json();
+    const thresholds = await threshRes.json();
+    const outdoor = await outdoorRes.json();
+
+    currentThresholds = thresholds;
+    window._latestData = latest;
+
+    updateCards(latest);
+    updateCharts(history);
+    updateSnapshot(latest, thresholds, history);
+    updateOutdoorStrip(outdoor, latest);
+
+    document.getElementById('lastUpdated').textContent =
+      latest.timestamp ? `Last updated: ${latest.timestamp}` : 'No data yet';
+    document.getElementById('connectionStatus').classList.remove('offline');
+  } catch (e) {
+    document.getElementById('connectionStatus').classList.add('offline');
+    document.getElementById('connectionStatus').innerHTML = '<span class="dot"></span> Offline';
+    console.error(e);
+  }
+}
+
+buildCards();
+buildCharts();
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
+DASHBOARD_EOF
